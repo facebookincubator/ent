@@ -79,6 +79,8 @@ func NewMigrate(d dialect.Driver, opts ...MigrateOption) (*Migrate, error) {
 		m.sqlDialect = &SQLite{Driver: d}
 	case dialect.Postgres:
 		m.sqlDialect = &Postgres{Driver: d}
+	case dialect.MSSQL:
+		m.sqlDialect = &MSSQL{Driver: d}
 	default:
 		return nil, fmt.Errorf("sql/schema: unsupported dialect %q", d.Dialect())
 	}
@@ -152,6 +154,32 @@ func (m *Migrate) create(ctx context.Context, tx dialect.Tx, tables ...*Table) e
 					return err
 				}
 			}
+
+			if m.Dialect() == dialect.MSSQL {
+				// Convert unique column into an index including where <col> is not null
+				for _, col := range t.Columns {
+					if col.Unique {
+						b := sql.Builder{}
+						b.SetDialect(m.Dialect())
+
+						b.Ident(col.Name)
+						b.WriteString(" is not NULL")
+
+						name := fmt.Sprintf("%s_%s_uq", t.Name, col.Name)
+
+						query, args := m.addIndex(&Index{
+							Name:    name,
+							Unique:  true,
+							Columns: []*Column{col},
+							filter:  b.String(),
+						}, t.Name).Query()
+						if err := tx.Exec(ctx, query, args, nil); err != nil {
+							return fmt.Errorf("create index %q: %v", name, err)
+						}
+					}
+				}
+			}
+
 			// indexes.
 			for _, idx := range t.Indexes {
 				query, args := m.addIndex(idx, t.Name).Query()
@@ -180,13 +208,34 @@ func (m *Migrate) create(ctx context.Context, tx dialect.Tx, tables ...*Table) e
 		if len(fks) == 0 {
 			continue
 		}
-		b := sql.Dialect(m.Dialect()).AlterTable(t.Name)
-		for _, fk := range fks {
-			b.AddForeignKey(fk.DSL())
-		}
-		query, args := b.Query()
-		if err := tx.Exec(ctx, query, args, nil); err != nil {
-			return fmt.Errorf("create foreign keys for %q: %v", t.Name, err)
+
+		if m.Dialect() == dialect.MSSQL {
+			// MSSQL requires multiple constraints to omit the ADD keyword
+			// E.g
+			// ALTER TABLE [files]
+			//    ADD CONSTRAINT [files_file_types_files] FOREIGN KEY ([file_type_files]) REFERENCES [file_types] ([id]) ON DELETE SET NULL,
+			//        CONSTRAINT [files_groups_files] FOREIGN KEY ([group_files]) REFERENCES [groups] ([id]) ON DELETE SET NULL,
+			//        CONSTRAINT [files_users_files] FOREIGN KEY ([user_files]) REFERENCES [users] ([id]) ON DELETE SET NULL;
+			// Workaround for now: create 1 query per fk
+
+			for _, fk := range fks {
+				b := sql.Dialect(m.Dialect()).AlterTable(t.Name)
+				b.AddForeignKey(fk.DSL())
+
+				query, args := b.Query()
+				if err := tx.Exec(ctx, query, args, nil); err != nil {
+					return fmt.Errorf("create foreign key for %q: %v", t.Name, err)
+				}
+			}
+		} else {
+			b := sql.Dialect(m.Dialect()).AlterTable(t.Name)
+			for _, fk := range fks {
+				b.AddForeignKey(fk.DSL())
+			}
+			query, args := b.Query()
+			if err := tx.Exec(ctx, query, args, nil); err != nil {
+				return fmt.Errorf("create foreign keys for %q: %v", t.Name, err)
+			}
 		}
 	}
 	return nil

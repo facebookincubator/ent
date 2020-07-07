@@ -259,7 +259,6 @@ var (
 				Columns: []*schema.Column{NodesColumns[2]},
 
 				RefColumns: []*schema.Column{NodesColumns[0]},
-				OnDelete:   schema.SetNull,
 			},
 		},
 	}
@@ -288,7 +287,10 @@ var (
 				Columns: []*schema.Column{PetsColumns[3]},
 
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.SetNull,
+				// OnDelete:   schema.SetNull,
+				// https://stackoverflow.com/a/852047/614371
+				// HACK
+				OnDelete: schema.NoAction,
 			},
 		},
 		Indexes: []*schema.Index{
@@ -344,14 +346,16 @@ var (
 				Columns: []*schema.Column{UsersColumns[11]},
 
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:  "users_users_parent",
 				Columns: []*schema.Column{UsersColumns[12]},
 
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.SetNull,
+				// OnDelete:   schema.SetNull,
+				// https://stackoverflow.com/a/852047/614371
+				// HACK
+				OnDelete: schema.NoAction,
 			},
 		},
 	}
@@ -425,14 +429,16 @@ var (
 				Columns: []*schema.Column{UserFriendsColumns[0]},
 
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.Cascade,
+				// HACK
+				// OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:  "user_friends_friend_id",
 				Columns: []*schema.Column{UserFriendsColumns[1]},
 
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.Cascade,
+				// HACK
+				// OnDelete:   schema.Cascade,
 			},
 		},
 	}
@@ -452,14 +458,16 @@ var (
 				Columns: []*schema.Column{UserFollowingColumns[0]},
 
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.Cascade,
+				// HACK
+				// OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:  "user_following_follower_id",
 				Columns: []*schema.Column{UserFollowingColumns[1]},
 
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.Cascade,
+				// HACK
+				// OnDelete:   schema.Cascade,
 			},
 		},
 	}
