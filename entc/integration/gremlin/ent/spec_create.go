@@ -19,8 +19,9 @@ import (
 // SpecCreate is the builder for creating a Spec entity.
 type SpecCreate struct {
 	config
-	mutation *SpecMutation
-	hooks    []Hook
+	mutation         *SpecMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // AddCardIDs adds the "card" edge to the Card entity by IDs.
@@ -119,5 +120,6 @@ func (sc *SpecCreate) gremlin() *dsl.Traversal {
 // SpecCreateBulk is the builder for creating many Spec entities in bulk.
 type SpecCreateBulk struct {
 	config
-	builders []*SpecCreate
+	builders              []*SpecCreate
+	batchConstraintFields []string
 }

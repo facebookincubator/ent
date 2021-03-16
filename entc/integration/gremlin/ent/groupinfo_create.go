@@ -23,8 +23,9 @@ import (
 // GroupInfoCreate is the builder for creating a GroupInfo entity.
 type GroupInfoCreate struct {
 	config
-	mutation *GroupInfoMutation
-	hooks    []Hook
+	mutation         *GroupInfoMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetDesc sets the "desc" field.
@@ -180,5 +181,6 @@ func (gic *GroupInfoCreate) gremlin() *dsl.Traversal {
 // GroupInfoCreateBulk is the builder for creating many GroupInfo entities in bulk.
 type GroupInfoCreateBulk struct {
 	config
-	builders []*GroupInfoCreate
+	builders              []*GroupInfoCreate
+	batchConstraintFields []string
 }

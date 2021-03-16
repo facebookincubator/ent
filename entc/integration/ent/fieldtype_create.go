@@ -26,8 +26,9 @@ import (
 // FieldTypeCreate is the builder for creating a FieldType entity.
 type FieldTypeCreate struct {
 	config
-	mutation *FieldTypeMutation
-	hooks    []Hook
+	mutation         *FieldTypeMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetInt sets the "int" field.
@@ -703,7 +704,18 @@ func (ftc *FieldTypeCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on FieldType entities.
+func (ftc *FieldTypeCreate) OnConflict(constraintField string, otherFields ...string) *FieldTypeCreate {
+	ftc.constraintFields = []string{constraintField}
+	ftc.constraintFields = append(ftc.constraintFields, otherFields...)
+	return ftc
+}
+
 func (ftc *FieldTypeCreate) sqlSave(ctx context.Context) (*FieldType, error) {
+	err := ftc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := ftc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, ftc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -727,6 +739,10 @@ func (ftc *FieldTypeCreate) createSpec() (*FieldType, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if ftc.constraintFields != nil {
+		_spec.ConstraintFields = ftc.constraintFields
+	}
 	if value, ok := ftc.mutation.Int(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeInt,
@@ -1122,14 +1138,39 @@ func (ftc *FieldTypeCreate) createSpec() (*FieldType, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on FieldType entities.
+func (ftc *FieldTypeCreate) validateUpsertConstraints() error {
+	for _, f := range ftc.constraintFields {
+		if !fieldtype.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, fieldtype.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // FieldTypeCreateBulk is the builder for creating many FieldType entities in bulk.
 type FieldTypeCreateBulk struct {
 	config
-	builders []*FieldTypeCreate
+	builders              []*FieldTypeCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on FieldType entities.
+func (ftcb *FieldTypeCreateBulk) OnConflict(constraintField string, otherFields ...string) *FieldTypeCreateBulk {
+	ftcb.batchConstraintFields = []string{constraintField}
+	ftcb.batchConstraintFields = append(ftcb.batchConstraintFields, otherFields...)
+
+	return ftcb
 }
 
 // Save creates the FieldType entities in the database.
 func (ftcb *FieldTypeCreateBulk) Save(ctx context.Context) ([]*FieldType, error) {
+	err := ftcb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(ftcb.builders))
 	nodes := make([]*FieldType, len(ftcb.builders))
 	mutators := make([]Mutator, len(ftcb.builders))
@@ -1152,7 +1193,7 @@ func (ftcb *FieldTypeCreateBulk) Save(ctx context.Context) ([]*FieldType, error)
 					_, err = mutators[i+1].Mutate(root, ftcb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, ftcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, ftcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: ftcb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -1187,4 +1228,15 @@ func (ftcb *FieldTypeCreateBulk) SaveX(ctx context.Context) []*FieldType {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted FieldType entities.
+func (ftcb *FieldTypeCreateBulk) validateUpsertConstraints() error {
+	for _, f := range ftcb.batchConstraintFields {
+		if !fieldtype.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, fieldtype.UniqueColumns)}
+		}
+	}
+	return nil
 }

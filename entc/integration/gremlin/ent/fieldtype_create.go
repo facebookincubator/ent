@@ -27,8 +27,9 @@ import (
 // FieldTypeCreate is the builder for creating a FieldType entity.
 type FieldTypeCreate struct {
 	config
-	mutation *FieldTypeMutation
-	hooks    []Hook
+	mutation         *FieldTypeMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetInt sets the "int" field.
@@ -875,5 +876,6 @@ func (ftc *FieldTypeCreate) gremlin() *dsl.Traversal {
 // FieldTypeCreateBulk is the builder for creating many FieldType entities in bulk.
 type FieldTypeCreateBulk struct {
 	config
-	builders []*FieldTypeCreate
+	builders              []*FieldTypeCreate
+	batchConstraintFields []string
 }

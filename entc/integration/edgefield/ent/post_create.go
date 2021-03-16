@@ -20,8 +20,9 @@ import (
 // PostCreate is the builder for creating a Post entity.
 type PostCreate struct {
 	config
-	mutation *PostMutation
-	hooks    []Hook
+	mutation         *PostMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetText sets the "text" field.
@@ -106,7 +107,18 @@ func (pc *PostCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on Post entities.
+func (pc *PostCreate) OnConflict(constraintField string, otherFields ...string) *PostCreate {
+	pc.constraintFields = []string{constraintField}
+	pc.constraintFields = append(pc.constraintFields, otherFields...)
+	return pc
+}
+
 func (pc *PostCreate) sqlSave(ctx context.Context) (*Post, error) {
+	err := pc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := pc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, pc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -130,6 +142,10 @@ func (pc *PostCreate) createSpec() (*Post, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if pc.constraintFields != nil {
+		_spec.ConstraintFields = pc.constraintFields
+	}
 	if value, ok := pc.mutation.Text(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeString,
@@ -161,14 +177,39 @@ func (pc *PostCreate) createSpec() (*Post, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on Post entities.
+func (pc *PostCreate) validateUpsertConstraints() error {
+	for _, f := range pc.constraintFields {
+		if !post.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, post.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // PostCreateBulk is the builder for creating many Post entities in bulk.
 type PostCreateBulk struct {
 	config
-	builders []*PostCreate
+	builders              []*PostCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on Post entities.
+func (pcb *PostCreateBulk) OnConflict(constraintField string, otherFields ...string) *PostCreateBulk {
+	pcb.batchConstraintFields = []string{constraintField}
+	pcb.batchConstraintFields = append(pcb.batchConstraintFields, otherFields...)
+
+	return pcb
 }
 
 // Save creates the Post entities in the database.
 func (pcb *PostCreateBulk) Save(ctx context.Context) ([]*Post, error) {
+	err := pcb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(pcb.builders))
 	nodes := make([]*Post, len(pcb.builders))
 	mutators := make([]Mutator, len(pcb.builders))
@@ -190,7 +231,7 @@ func (pcb *PostCreateBulk) Save(ctx context.Context) ([]*Post, error) {
 					_, err = mutators[i+1].Mutate(root, pcb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, pcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, pcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: pcb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -225,4 +266,15 @@ func (pcb *PostCreateBulk) SaveX(ctx context.Context) []*Post {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted Post entities.
+func (pcb *PostCreateBulk) validateUpsertConstraints() error {
+	for _, f := range pcb.batchConstraintFields {
+		if !post.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, post.UniqueColumns)}
+		}
+	}
+	return nil
 }

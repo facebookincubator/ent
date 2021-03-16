@@ -25,8 +25,9 @@ import (
 // CardCreate is the builder for creating a Card entity.
 type CardCreate struct {
 	config
-	mutation *CardMutation
-	hooks    []Hook
+	mutation         *CardMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetCreateTime sets the "create_time" field.
@@ -279,5 +280,6 @@ func (cc *CardCreate) gremlin() *dsl.Traversal {
 // CardCreateBulk is the builder for creating many Card entities in bulk.
 type CardCreateBulk struct {
 	config
-	builders []*CardCreate
+	builders              []*CardCreate
+	batchConstraintFields []string
 }

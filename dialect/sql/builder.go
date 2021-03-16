@@ -622,6 +622,12 @@ type InsertBuilder struct {
 	defaults  string
 	returning []string
 	values    [][]interface{}
+
+	// Upsert
+	conflictColumns []string
+	updateColumns   []string
+	updateValues    []interface{}
+	onConflictOp    ConflictResolutionOp
 }
 
 // Insert creates a builder for the `INSERT INTO` statement.
@@ -654,6 +660,25 @@ func (i *InsertBuilder) Set(column string, v interface{}) *InsertBuilder {
 // Columns sets the columns of the insert statement.
 func (i *InsertBuilder) Columns(columns ...string) *InsertBuilder {
 	i.columns = append(i.columns, columns...)
+	return i
+}
+
+// ConflictColumns sets the columns to apply the update during upsert.
+func (i *InsertBuilder) ConflictColumns(values ...string) *InsertBuilder {
+	i.conflictColumns = append(i.conflictColumns, values...)
+	return i
+}
+
+// OnConflict sets the columns to apply the update during upsert.
+func (i *InsertBuilder) OnConflict(op ConflictResolutionOp) *InsertBuilder {
+	i.onConflictOp = op
+	return i
+}
+
+// UpdateSet sets a column and a its value for use on upsert
+func (i *InsertBuilder) UpdateSet(column string, v interface{}) *InsertBuilder {
+	i.updateColumns = append(i.updateColumns, column)
+	i.updateValues = append(i.updateValues, v)
 	return i
 }
 
@@ -701,11 +726,86 @@ func (i *InsertBuilder) Query() (string, []interface{}) {
 			})
 		}
 	}
+
+	if len(i.conflictColumns) > 0 {
+		// Update on conflict
+		i.buildConflictHandling()
+	}
+
 	if len(i.returning) > 0 && i.postgres() {
 		i.WriteString(" RETURNING ")
 		i.IdentComma(i.returning...)
 	}
 	return i.String(), i.args
+}
+
+func (i *InsertBuilder) buildConflictHandling() {
+	switch i.Dialect() {
+	case dialect.Postgres, dialect.SQLite:
+		i.Pad().
+			WriteString("ON CONFLICT").
+			Pad().
+			Nested(func(b *Builder) {
+				b.IdentComma(i.conflictColumns...)
+			}).
+			Pad()
+
+		switch i.onConflictOp {
+		case OpResolveWithNewValues:
+			i.WriteString("DO UPDATE SET").Pad()
+			for j, c := range i.columns {
+				if j > 0 {
+					i.Comma()
+				}
+				i.Ident(c).WriteOp(OpEQ).Ident("excluded").WriteByte('.').Ident(c)
+			}
+		case OpResolveWithIgnore:
+			i.WriteString("DO UPDATE SET").Pad()
+			for j, c := range i.columns {
+				if j > 0 {
+					i.Comma()
+				}
+				// Ignore conflict by setting column to itself e.g. "c" = "c"
+				i.Ident(c).WriteOp(OpEQ).Ident(c)
+			}
+		case OpResolveWithAlternateValues:
+			i.WriteString("DO UPDATE SET").Pad()
+			writeUpdateValues(i, i.updateColumns, i.updateValues)
+		}
+
+	case dialect.MySQL:
+		i.Pad().WriteString("ON DUPLICATE KEY UPDATE ")
+
+		switch i.onConflictOp {
+		case OpResolveWithIgnore:
+			for j, c := range i.columns {
+				if j > 0 {
+					i.Comma()
+				}
+				// Ignore conflict by setting column to itself e.g. `c` = `c`
+				i.Ident(c).WriteOp(OpEQ).Ident(c)
+			}
+		case OpResolveWithNewValues:
+			for j, c := range i.columns {
+				if j > 0 {
+					i.Comma()
+				}
+				// update column with the value we tried to insert
+				i.Ident(c).WriteOp(OpEQ).WriteString("VALUES").WriteByte('(').Ident(c).WriteByte(')')
+			}
+		case OpResolveWithAlternateValues:
+			writeUpdateValues(i, i.updateColumns, i.updateValues)
+		}
+	}
+}
+
+func writeUpdateValues(builder *InsertBuilder, columns []string, values []interface{}) {
+	for i, c := range columns {
+		if i > 0 {
+			builder.Comma()
+		}
+		builder.Ident(c).WriteString(" = ").Arg(builder.updateValues[i])
+	}
 }
 
 // UpdateBuilder is a builder for `UPDATE` statement.
@@ -2170,6 +2270,16 @@ var ops = [...]string{
 	OpIsNull:  "IS NULL",
 	OpNotNull: "IS NOT NULL",
 }
+
+// A ConflictResolutionOp represents a possible action to take when an insert conflict occurrs.
+type ConflictResolutionOp int
+
+// Conflict Operations
+const (
+	OpResolveWithNewValues       ConflictResolutionOp = iota // Update conflict columns using EXCLUDED.column (postres) or c = VALUES(c) (mysql)
+	OpResolveWithIgnore                                      // Sets each column to itself to force an update and return the ID, otherwise does not change any data. This may still trigger update hooks in the database.
+	OpResolveWithAlternateValues                             // Update using provided values across all rows.
+)
 
 // WriteOp writes an operator to the builder.
 func (b *Builder) WriteOp(op Op) *Builder {

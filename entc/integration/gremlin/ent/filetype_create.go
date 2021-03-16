@@ -22,8 +22,9 @@ import (
 // FileTypeCreate is the builder for creating a FileType entity.
 type FileTypeCreate struct {
 	config
-	mutation *FileTypeMutation
-	hooks    []Hook
+	mutation         *FileTypeMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetName sets the "name" field.
@@ -217,5 +218,6 @@ func (ftc *FileTypeCreate) gremlin() *dsl.Traversal {
 // FileTypeCreateBulk is the builder for creating many FileType entities in bulk.
 type FileTypeCreateBulk struct {
 	config
-	builders []*FileTypeCreate
+	builders              []*FileTypeCreate
+	batchConstraintFields []string
 }

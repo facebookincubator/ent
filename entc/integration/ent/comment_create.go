@@ -19,8 +19,9 @@ import (
 // CommentCreate is the builder for creating a Comment entity.
 type CommentCreate struct {
 	config
-	mutation *CommentMutation
-	hooks    []Hook
+	mutation         *CommentMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetUniqueInt sets the "unique_int" field.
@@ -109,7 +110,18 @@ func (cc *CommentCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on Comment entities.
+func (cc *CommentCreate) OnConflict(constraintField string, otherFields ...string) *CommentCreate {
+	cc.constraintFields = []string{constraintField}
+	cc.constraintFields = append(cc.constraintFields, otherFields...)
+	return cc
+}
+
 func (cc *CommentCreate) sqlSave(ctx context.Context) (*Comment, error) {
+	err := cc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := cc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, cc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -133,6 +145,10 @@ func (cc *CommentCreate) createSpec() (*Comment, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if cc.constraintFields != nil {
+		_spec.ConstraintFields = cc.constraintFields
+	}
 	if value, ok := cc.mutation.UniqueInt(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeInt,
@@ -160,14 +176,39 @@ func (cc *CommentCreate) createSpec() (*Comment, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on Comment entities.
+func (cc *CommentCreate) validateUpsertConstraints() error {
+	for _, f := range cc.constraintFields {
+		if !comment.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, comment.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // CommentCreateBulk is the builder for creating many Comment entities in bulk.
 type CommentCreateBulk struct {
 	config
-	builders []*CommentCreate
+	builders              []*CommentCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on Comment entities.
+func (ccb *CommentCreateBulk) OnConflict(constraintField string, otherFields ...string) *CommentCreateBulk {
+	ccb.batchConstraintFields = []string{constraintField}
+	ccb.batchConstraintFields = append(ccb.batchConstraintFields, otherFields...)
+
+	return ccb
 }
 
 // Save creates the Comment entities in the database.
 func (ccb *CommentCreateBulk) Save(ctx context.Context) ([]*Comment, error) {
+	err := ccb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(ccb.builders))
 	nodes := make([]*Comment, len(ccb.builders))
 	mutators := make([]Mutator, len(ccb.builders))
@@ -189,7 +230,7 @@ func (ccb *CommentCreateBulk) Save(ctx context.Context) ([]*Comment, error) {
 					_, err = mutators[i+1].Mutate(root, ccb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, ccb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, ccb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: ccb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -224,4 +265,15 @@ func (ccb *CommentCreateBulk) SaveX(ctx context.Context) []*Comment {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted Comment entities.
+func (ccb *CommentCreateBulk) validateUpsertConstraints() error {
+	for _, f := range ccb.batchConstraintFields {
+		if !comment.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, comment.UniqueColumns)}
+		}
+	}
+	return nil
 }

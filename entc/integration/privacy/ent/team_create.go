@@ -21,8 +21,9 @@ import (
 // TeamCreate is the builder for creating a Team entity.
 type TeamCreate struct {
 	config
-	mutation *TeamMutation
-	hooks    []Hook
+	mutation         *TeamMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetName sets the "name" field.
@@ -123,7 +124,18 @@ func (tc *TeamCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on Team entities.
+func (tc *TeamCreate) OnConflict(constraintField string, otherFields ...string) *TeamCreate {
+	tc.constraintFields = []string{constraintField}
+	tc.constraintFields = append(tc.constraintFields, otherFields...)
+	return tc
+}
+
 func (tc *TeamCreate) sqlSave(ctx context.Context) (*Team, error) {
+	err := tc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := tc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, tc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -147,6 +159,10 @@ func (tc *TeamCreate) createSpec() (*Team, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if tc.constraintFields != nil {
+		_spec.ConstraintFields = tc.constraintFields
+	}
 	if value, ok := tc.mutation.Name(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeString,
@@ -196,14 +212,39 @@ func (tc *TeamCreate) createSpec() (*Team, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on Team entities.
+func (tc *TeamCreate) validateUpsertConstraints() error {
+	for _, f := range tc.constraintFields {
+		if !team.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, team.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // TeamCreateBulk is the builder for creating many Team entities in bulk.
 type TeamCreateBulk struct {
 	config
-	builders []*TeamCreate
+	builders              []*TeamCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on Team entities.
+func (tcb *TeamCreateBulk) OnConflict(constraintField string, otherFields ...string) *TeamCreateBulk {
+	tcb.batchConstraintFields = []string{constraintField}
+	tcb.batchConstraintFields = append(tcb.batchConstraintFields, otherFields...)
+
+	return tcb
 }
 
 // Save creates the Team entities in the database.
 func (tcb *TeamCreateBulk) Save(ctx context.Context) ([]*Team, error) {
+	err := tcb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(tcb.builders))
 	nodes := make([]*Team, len(tcb.builders))
 	mutators := make([]Mutator, len(tcb.builders))
@@ -225,7 +266,7 @@ func (tcb *TeamCreateBulk) Save(ctx context.Context) ([]*Team, error) {
 					_, err = mutators[i+1].Mutate(root, tcb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, tcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, tcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: tcb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -260,4 +301,15 @@ func (tcb *TeamCreateBulk) SaveX(ctx context.Context) []*Team {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted Team entities.
+func (tcb *TeamCreateBulk) validateUpsertConstraints() error {
+	for _, f := range tcb.batchConstraintFields {
+		if !team.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, team.UniqueColumns)}
+		}
+	}
+	return nil
 }

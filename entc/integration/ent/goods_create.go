@@ -18,8 +18,9 @@ import (
 // GoodsCreate is the builder for creating a Goods entity.
 type GoodsCreate struct {
 	config
-	mutation *GoodsMutation
-	hooks    []Hook
+	mutation         *GoodsMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // Mutation returns the GoodsMutation object of the builder.
@@ -76,7 +77,18 @@ func (gc *GoodsCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on Goods entities.
+func (gc *GoodsCreate) OnConflict(constraintField string, otherFields ...string) *GoodsCreate {
+	gc.constraintFields = []string{constraintField}
+	gc.constraintFields = append(gc.constraintFields, otherFields...)
+	return gc
+}
+
 func (gc *GoodsCreate) sqlSave(ctx context.Context) (*Goods, error) {
+	err := gc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := gc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, gc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -100,17 +112,46 @@ func (gc *GoodsCreate) createSpec() (*Goods, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if gc.constraintFields != nil {
+		_spec.ConstraintFields = gc.constraintFields
+	}
 	return _node, _spec
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on Goods entities.
+func (gc *GoodsCreate) validateUpsertConstraints() error {
+	for _, f := range gc.constraintFields {
+		if !goods.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, goods.UniqueColumns)}
+		}
+	}
+	return nil
 }
 
 // GoodsCreateBulk is the builder for creating many Goods entities in bulk.
 type GoodsCreateBulk struct {
 	config
-	builders []*GoodsCreate
+	builders              []*GoodsCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on Goods entities.
+func (gcb *GoodsCreateBulk) OnConflict(constraintField string, otherFields ...string) *GoodsCreateBulk {
+	gcb.batchConstraintFields = []string{constraintField}
+	gcb.batchConstraintFields = append(gcb.batchConstraintFields, otherFields...)
+
+	return gcb
 }
 
 // Save creates the Goods entities in the database.
 func (gcb *GoodsCreateBulk) Save(ctx context.Context) ([]*Goods, error) {
+	err := gcb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(gcb.builders))
 	nodes := make([]*Goods, len(gcb.builders))
 	mutators := make([]Mutator, len(gcb.builders))
@@ -132,7 +173,7 @@ func (gcb *GoodsCreateBulk) Save(ctx context.Context) ([]*Goods, error) {
 					_, err = mutators[i+1].Mutate(root, gcb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, gcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, gcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: gcb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -167,4 +208,15 @@ func (gcb *GoodsCreateBulk) SaveX(ctx context.Context) []*Goods {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted Goods entities.
+func (gcb *GoodsCreateBulk) validateUpsertConstraints() error {
+	for _, f := range gcb.batchConstraintFields {
+		if !goods.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, goods.UniqueColumns)}
+		}
+	}
+	return nil
 }

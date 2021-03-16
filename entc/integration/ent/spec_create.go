@@ -19,8 +19,9 @@ import (
 // SpecCreate is the builder for creating a Spec entity.
 type SpecCreate struct {
 	config
-	mutation *SpecMutation
-	hooks    []Hook
+	mutation         *SpecMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // AddCardIDs adds the "card" edge to the Card entity by IDs.
@@ -92,7 +93,18 @@ func (sc *SpecCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on Spec entities.
+func (sc *SpecCreate) OnConflict(constraintField string, otherFields ...string) *SpecCreate {
+	sc.constraintFields = []string{constraintField}
+	sc.constraintFields = append(sc.constraintFields, otherFields...)
+	return sc
+}
+
 func (sc *SpecCreate) sqlSave(ctx context.Context) (*Spec, error) {
+	err := sc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := sc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, sc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -116,6 +128,10 @@ func (sc *SpecCreate) createSpec() (*Spec, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if sc.constraintFields != nil {
+		_spec.ConstraintFields = sc.constraintFields
+	}
 	if nodes := sc.mutation.CardIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.M2M,
@@ -138,14 +154,39 @@ func (sc *SpecCreate) createSpec() (*Spec, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on Spec entities.
+func (sc *SpecCreate) validateUpsertConstraints() error {
+	for _, f := range sc.constraintFields {
+		if !spec.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, spec.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // SpecCreateBulk is the builder for creating many Spec entities in bulk.
 type SpecCreateBulk struct {
 	config
-	builders []*SpecCreate
+	builders              []*SpecCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on Spec entities.
+func (scb *SpecCreateBulk) OnConflict(constraintField string, otherFields ...string) *SpecCreateBulk {
+	scb.batchConstraintFields = []string{constraintField}
+	scb.batchConstraintFields = append(scb.batchConstraintFields, otherFields...)
+
+	return scb
 }
 
 // Save creates the Spec entities in the database.
 func (scb *SpecCreateBulk) Save(ctx context.Context) ([]*Spec, error) {
+	err := scb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(scb.builders))
 	nodes := make([]*Spec, len(scb.builders))
 	mutators := make([]Mutator, len(scb.builders))
@@ -167,7 +208,7 @@ func (scb *SpecCreateBulk) Save(ctx context.Context) ([]*Spec, error) {
 					_, err = mutators[i+1].Mutate(root, scb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, scb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, scb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: scb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -202,4 +243,15 @@ func (scb *SpecCreateBulk) SaveX(ctx context.Context) []*Spec {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted Spec entities.
+func (scb *SpecCreateBulk) validateUpsertConstraints() error {
+	for _, f := range scb.batchConstraintFields {
+		if !spec.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, spec.UniqueColumns)}
+		}
+	}
+	return nil
 }

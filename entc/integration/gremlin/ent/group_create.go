@@ -24,8 +24,9 @@ import (
 // GroupCreate is the builder for creating a Group entity.
 type GroupCreate struct {
 	config
-	mutation *GroupMutation
-	hooks    []Hook
+	mutation         *GroupMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetActive sets the "active" field.
@@ -303,5 +304,6 @@ func (gc *GroupCreate) gremlin() *dsl.Traversal {
 // GroupCreateBulk is the builder for creating many Group entities in bulk.
 type GroupCreateBulk struct {
 	config
-	builders []*GroupCreate
+	builders              []*GroupCreate
+	batchConstraintFields []string
 }

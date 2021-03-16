@@ -18,8 +18,9 @@ import (
 // ConversionCreate is the builder for creating a Conversion entity.
 type ConversionCreate struct {
 	config
-	mutation *ConversionMutation
-	hooks    []Hook
+	mutation         *ConversionMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetName sets the "name" field.
@@ -202,7 +203,18 @@ func (cc *ConversionCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on Conversion entities.
+func (cc *ConversionCreate) OnConflict(constraintField string, otherFields ...string) *ConversionCreate {
+	cc.constraintFields = []string{constraintField}
+	cc.constraintFields = append(cc.constraintFields, otherFields...)
+	return cc
+}
+
 func (cc *ConversionCreate) sqlSave(ctx context.Context) (*Conversion, error) {
+	err := cc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := cc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, cc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -226,6 +238,10 @@ func (cc *ConversionCreate) createSpec() (*Conversion, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if cc.constraintFields != nil {
+		_spec.ConstraintFields = cc.constraintFields
+	}
 	if value, ok := cc.mutation.Name(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeString,
@@ -301,14 +317,39 @@ func (cc *ConversionCreate) createSpec() (*Conversion, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on Conversion entities.
+func (cc *ConversionCreate) validateUpsertConstraints() error {
+	for _, f := range cc.constraintFields {
+		if !conversion.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, conversion.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // ConversionCreateBulk is the builder for creating many Conversion entities in bulk.
 type ConversionCreateBulk struct {
 	config
-	builders []*ConversionCreate
+	builders              []*ConversionCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on Conversion entities.
+func (ccb *ConversionCreateBulk) OnConflict(constraintField string, otherFields ...string) *ConversionCreateBulk {
+	ccb.batchConstraintFields = []string{constraintField}
+	ccb.batchConstraintFields = append(ccb.batchConstraintFields, otherFields...)
+
+	return ccb
 }
 
 // Save creates the Conversion entities in the database.
 func (ccb *ConversionCreateBulk) Save(ctx context.Context) ([]*Conversion, error) {
+	err := ccb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(ccb.builders))
 	nodes := make([]*Conversion, len(ccb.builders))
 	mutators := make([]Mutator, len(ccb.builders))
@@ -330,7 +371,7 @@ func (ccb *ConversionCreateBulk) Save(ctx context.Context) ([]*Conversion, error
 					_, err = mutators[i+1].Mutate(root, ccb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, ccb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, ccb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: ccb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -365,4 +406,15 @@ func (ccb *ConversionCreateBulk) SaveX(ctx context.Context) []*Conversion {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted Conversion entities.
+func (ccb *ConversionCreateBulk) validateUpsertConstraints() error {
+	for _, f := range ccb.batchConstraintFields {
+		if !conversion.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, conversion.UniqueColumns)}
+		}
+	}
+	return nil
 }

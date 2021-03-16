@@ -26,6 +26,7 @@ type {{ $builder }} struct {
 	config
 	mutation *{{  $.MutationName }}
 	hooks []Hook
+	constraintFields []string
 }
 
 {{ with extend $ "Builder" $builder }}
@@ -137,6 +138,7 @@ func ({{ $receiver }} *{{ $builder }}) check() error {
 type {{ $bulk }} struct {
 	config
 	builders []*{{  $builder }}
+	batchConstraintFields []string
 }
 
 {{/* If the storage driver supports bulk creation */}}

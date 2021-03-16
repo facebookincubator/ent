@@ -22,8 +22,9 @@ import (
 // FileCreate is the builder for creating a File entity.
 type FileCreate struct {
 	config
-	mutation *FileMutation
-	hooks    []Hook
+	mutation         *FileMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetSize sets the "size" field.
@@ -215,7 +216,18 @@ func (fc *FileCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on File entities.
+func (fc *FileCreate) OnConflict(constraintField string, otherFields ...string) *FileCreate {
+	fc.constraintFields = []string{constraintField}
+	fc.constraintFields = append(fc.constraintFields, otherFields...)
+	return fc
+}
+
 func (fc *FileCreate) sqlSave(ctx context.Context) (*File, error) {
+	err := fc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := fc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, fc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -239,6 +251,10 @@ func (fc *FileCreate) createSpec() (*File, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if fc.constraintFields != nil {
+		_spec.ConstraintFields = fc.constraintFields
+	}
 	if value, ok := fc.mutation.Size(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeInt,
@@ -341,14 +357,39 @@ func (fc *FileCreate) createSpec() (*File, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on File entities.
+func (fc *FileCreate) validateUpsertConstraints() error {
+	for _, f := range fc.constraintFields {
+		if !file.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, file.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // FileCreateBulk is the builder for creating many File entities in bulk.
 type FileCreateBulk struct {
 	config
-	builders []*FileCreate
+	builders              []*FileCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on File entities.
+func (fcb *FileCreateBulk) OnConflict(constraintField string, otherFields ...string) *FileCreateBulk {
+	fcb.batchConstraintFields = []string{constraintField}
+	fcb.batchConstraintFields = append(fcb.batchConstraintFields, otherFields...)
+
+	return fcb
 }
 
 // Save creates the File entities in the database.
 func (fcb *FileCreateBulk) Save(ctx context.Context) ([]*File, error) {
+	err := fcb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(fcb.builders))
 	nodes := make([]*File, len(fcb.builders))
 	mutators := make([]Mutator, len(fcb.builders))
@@ -371,7 +412,7 @@ func (fcb *FileCreateBulk) Save(ctx context.Context) ([]*File, error) {
 					_, err = mutators[i+1].Mutate(root, fcb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, fcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, fcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: fcb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -406,4 +447,15 @@ func (fcb *FileCreateBulk) SaveX(ctx context.Context) []*File {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted File entities.
+func (fcb *FileCreateBulk) validateUpsertConstraints() error {
+	for _, f := range fcb.batchConstraintFields {
+		if !file.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, file.UniqueColumns)}
+		}
+	}
+	return nil
 }

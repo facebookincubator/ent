@@ -22,8 +22,9 @@ import (
 // CommentCreate is the builder for creating a Comment entity.
 type CommentCreate struct {
 	config
-	mutation *CommentMutation
-	hooks    []Hook
+	mutation         *CommentMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetUniqueInt sets the "unique_int" field.
@@ -165,5 +166,6 @@ func (cc *CommentCreate) gremlin() *dsl.Traversal {
 // CommentCreateBulk is the builder for creating many Comment entities in bulk.
 type CommentCreateBulk struct {
 	config
-	builders []*CommentCreate
+	builders              []*CommentCreate
+	batchConstraintFields []string
 }

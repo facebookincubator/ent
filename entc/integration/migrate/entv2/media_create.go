@@ -18,8 +18,9 @@ import (
 // MediaCreate is the builder for creating a Media entity.
 type MediaCreate struct {
 	config
-	mutation *MediaMutation
-	hooks    []Hook
+	mutation         *MediaMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetSource sets the "source" field.
@@ -104,7 +105,18 @@ func (mc *MediaCreate) check() error {
 	return nil
 }
 
+// OnConflict specifies how to handle inserts that conflict with a unique constraint on Media entities.
+func (mc *MediaCreate) OnConflict(constraintField string, otherFields ...string) *MediaCreate {
+	mc.constraintFields = []string{constraintField}
+	mc.constraintFields = append(mc.constraintFields, otherFields...)
+	return mc
+}
+
 func (mc *MediaCreate) sqlSave(ctx context.Context) (*Media, error) {
+	err := mc.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
 	_node, _spec := mc.createSpec()
 	if err := sqlgraph.CreateNode(ctx, mc.driver, _spec); err != nil {
 		if cerr, ok := isSQLConstraintError(err); ok {
@@ -128,6 +140,10 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 			},
 		}
 	)
+
+	if mc.constraintFields != nil {
+		_spec.ConstraintFields = mc.constraintFields
+	}
 	if value, ok := mc.mutation.Source(); ok {
 		_spec.Fields = append(_spec.Fields, &sqlgraph.FieldSpec{
 			Type:   field.TypeString,
@@ -147,14 +163,39 @@ func (mc *MediaCreate) createSpec() (*Media, *sqlgraph.CreateSpec) {
 	return _node, _spec
 }
 
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on Media entities.
+func (mc *MediaCreate) validateUpsertConstraints() error {
+	for _, f := range mc.constraintFields {
+		if !media.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, media.UniqueColumns)}
+		}
+	}
+	return nil
+}
+
 // MediaCreateBulk is the builder for creating many Media entities in bulk.
 type MediaCreateBulk struct {
 	config
-	builders []*MediaCreate
+	builders              []*MediaCreate
+	batchConstraintFields []string
+}
+
+// OnConflict specifies how to handle bulk inserts that conflict with a unique constraint on Media entities.
+func (mcb *MediaCreateBulk) OnConflict(constraintField string, otherFields ...string) *MediaCreateBulk {
+	mcb.batchConstraintFields = []string{constraintField}
+	mcb.batchConstraintFields = append(mcb.batchConstraintFields, otherFields...)
+
+	return mcb
 }
 
 // Save creates the Media entities in the database.
 func (mcb *MediaCreateBulk) Save(ctx context.Context) ([]*Media, error) {
+	err := mcb.validateUpsertConstraints()
+	if err != nil {
+		return nil, err
+	}
+
 	specs := make([]*sqlgraph.CreateSpec, len(mcb.builders))
 	nodes := make([]*Media, len(mcb.builders))
 	mutators := make([]Mutator, len(mcb.builders))
@@ -176,7 +217,7 @@ func (mcb *MediaCreateBulk) Save(ctx context.Context) ([]*Media, error) {
 					_, err = mutators[i+1].Mutate(root, mcb.builders[i+1].mutation)
 				} else {
 					// Invoke the actual operation on the latest mutation in the chain.
-					if err = sqlgraph.BatchCreate(ctx, mcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs}); err != nil {
+					if err = sqlgraph.BatchCreate(ctx, mcb.driver, &sqlgraph.BatchCreateSpec{Nodes: specs, BatchConstraintFields: mcb.batchConstraintFields}); err != nil {
 						if cerr, ok := isSQLConstraintError(err); ok {
 							err = cerr
 						}
@@ -211,4 +252,15 @@ func (mcb *MediaCreateBulk) SaveX(ctx context.Context) []*Media {
 		panic(err)
 	}
 	return v
+}
+
+// validateUpsertConstraints validates the columns specified in OnConflict are valid for
+// handling conflicts on batch inserted Media entities.
+func (mcb *MediaCreateBulk) validateUpsertConstraints() error {
+	for _, f := range mcb.batchConstraintFields {
+		if !media.ValidConstraintColumn(f) {
+			return &ValidationError{Name: f, err: fmt.Errorf("ent: invalid field %q for upsert conflict resolution, valid fields are: %+v", f, media.UniqueColumns)}
+		}
+	}
+	return nil
 }

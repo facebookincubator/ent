@@ -22,8 +22,9 @@ import (
 // UserCreate is the builder for creating a User entity.
 type UserCreate struct {
 	config
-	mutation *UserMutation
-	hooks    []Hook
+	mutation         *UserMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetOptionalInt sets the "optional_int" field.
@@ -555,5 +556,6 @@ func (uc *UserCreate) gremlin() *dsl.Traversal {
 // UserCreateBulk is the builder for creating many User entities in bulk.
 type UserCreateBulk struct {
 	config
-	builders []*UserCreate
+	builders              []*UserCreate
+	batchConstraintFields []string
 }

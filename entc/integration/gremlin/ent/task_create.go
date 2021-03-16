@@ -21,8 +21,9 @@ import (
 // TaskCreate is the builder for creating a Task entity.
 type TaskCreate struct {
 	config
-	mutation *TaskMutation
-	hooks    []Hook
+	mutation         *TaskMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetPriority sets the "priority" field.
@@ -137,5 +138,6 @@ func (tc *TaskCreate) gremlin() *dsl.Traversal {
 // TaskCreateBulk is the builder for creating many Task entities in bulk.
 type TaskCreateBulk struct {
 	config
-	builders []*TaskCreate
+	builders              []*TaskCreate
+	batchConstraintFields []string
 }

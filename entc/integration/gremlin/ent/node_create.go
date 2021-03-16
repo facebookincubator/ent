@@ -21,8 +21,9 @@ import (
 // NodeCreate is the builder for creating a Node entity.
 type NodeCreate struct {
 	config
-	mutation *NodeMutation
-	hooks    []Hook
+	mutation         *NodeMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // SetValue sets the "value" field.
@@ -184,5 +185,6 @@ func (nc *NodeCreate) gremlin() *dsl.Traversal {
 // NodeCreateBulk is the builder for creating many Node entities in bulk.
 type NodeCreateBulk struct {
 	config
-	builders []*NodeCreate
+	builders              []*NodeCreate
+	batchConstraintFields []string
 }

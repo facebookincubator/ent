@@ -19,8 +19,9 @@ import (
 // GoodsCreate is the builder for creating a Goods entity.
 type GoodsCreate struct {
 	config
-	mutation *GoodsMutation
-	hooks    []Hook
+	mutation         *GoodsMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // Mutation returns the GoodsMutation object of the builder.
@@ -101,5 +102,6 @@ func (gc *GoodsCreate) gremlin() *dsl.Traversal {
 // GoodsCreateBulk is the builder for creating many Goods entities in bulk.
 type GoodsCreateBulk struct {
 	config
-	builders []*GoodsCreate
+	builders              []*GoodsCreate
+	batchConstraintFields []string
 }

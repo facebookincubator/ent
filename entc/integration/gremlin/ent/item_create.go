@@ -19,8 +19,9 @@ import (
 // ItemCreate is the builder for creating a Item entity.
 type ItemCreate struct {
 	config
-	mutation *ItemMutation
-	hooks    []Hook
+	mutation         *ItemMutation
+	hooks            []Hook
+	constraintFields []string
 }
 
 // Mutation returns the ItemMutation object of the builder.
@@ -101,5 +102,6 @@ func (ic *ItemCreate) gremlin() *dsl.Traversal {
 // ItemCreateBulk is the builder for creating many Item entities in bulk.
 type ItemCreateBulk struct {
 	config
-	builders []*ItemCreate
+	builders              []*ItemCreate
+	batchConstraintFields []string
 }
