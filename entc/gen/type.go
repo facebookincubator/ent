@@ -269,6 +269,15 @@ func (t Type) EntSQL() *entsql.Annotation {
 
 // Package returns the package name of this node.
 func (t Type) Package() string {
+	prefix := ""
+	if t.Config != nil {
+		prefix = t.Config.EntityPackagePrefix
+	}
+	return prefix + strings.ToLower(t.Name)
+}
+
+// Filename returns the filename of this node.
+func (t Type) Filename() string {
 	return strings.ToLower(t.Name)
 }
 

@@ -66,6 +66,7 @@ func (IDType) String() string {
 // InitCmd returns the init command for ent/c packages.
 func InitCmd() *cobra.Command {
 	var target string
+	var prefix string
 	cmd := &cobra.Command{
 		Use:   "init [flags] [schemas]",
 		Short: "initialize an environment with zero or more schemas",
@@ -82,12 +83,13 @@ func InitCmd() *cobra.Command {
 			return nil
 		},
 		Run: func(cmd *cobra.Command, names []string) {
-			if err := initEnv(target, names); err != nil {
+			if err := initEnv(target, prefix, names); err != nil {
 				log.Fatalln(fmt.Errorf("ent/init: %w", err))
 			}
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", defaultSchema, "target directory for schemas")
+	cmd.Flags().StringVar(&prefix, "prefix", "", "prefix for entity subpackages")
 	return cmd
 }
 
@@ -116,6 +118,7 @@ func GenerateCmd(postRun ...func(*gen.Config)) *cobra.Command {
 	var (
 		cfg       gen.Config
 		storage   string
+		prefix    string
 		features  []string
 		templates []string
 		idtype    = IDType(field.TypeInt)
@@ -130,6 +133,7 @@ func GenerateCmd(postRun ...func(*gen.Config)) *cobra.Command {
 			Run: func(cmd *cobra.Command, path []string) {
 				opts := []entc.Option{
 					entc.Storage(storage),
+					entc.Prefix(prefix),
 					entc.FeatureNames(features...),
 				}
 				for _, tmpl := range templates {
@@ -168,6 +172,7 @@ func GenerateCmd(postRun ...func(*gen.Config)) *cobra.Command {
 		}
 	)
 	cmd.Flags().Var(&idtype, "idtype", "type of the id field")
+	cmd.Flags().StringVar(&prefix, "prefix", "", "prefix for entity subpackages")
 	cmd.Flags().StringVar(&storage, "storage", "sql", "storage driver to support in codegen")
 	cmd.Flags().StringVar(&cfg.Header, "header", "", "override codegen header")
 	cmd.Flags().StringVar(&cfg.Target, "target", "", "target directory for codegen")
@@ -177,8 +182,8 @@ func GenerateCmd(postRun ...func(*gen.Config)) *cobra.Command {
 }
 
 // initEnv initialize an environment for ent codegen.
-func initEnv(target string, names []string) error {
-	if err := createDir(target); err != nil {
+func initEnv(target string, prefix string, names []string) error {
+	if err := createDir(target, prefix); err != nil {
 		return fmt.Errorf("create dir %s: %w", target, err)
 	}
 	for _, name := range names {
@@ -197,7 +202,7 @@ func initEnv(target string, names []string) error {
 	return nil
 }
 
-func createDir(target string) error {
+func createDir(target string, prefix string) error {
 	_, err := os.Stat(target)
 	if err == nil || !os.IsNotExist(err) {
 		return err
@@ -208,6 +213,12 @@ func createDir(target string) error {
 	if target != defaultSchema {
 		return nil
 	}
+
+	flags := ""
+	if prefix != "" {
+		flags += " --prefix=" + prefix
+	}
+	genFile := fmt.Sprintf(genFileTpl, flags)
 	if err := ioutil.WriteFile("ent/generate.go", []byte(genFile), 0644); err != nil {
 		return fmt.Errorf("creating generate.go file: %w", err)
 	}
@@ -240,7 +251,7 @@ const (
 	// default schema package path.
 	defaultSchema = "ent/schema"
 	// ent/generate.go file used for "go generate" command.
-	genFile = "package ent\n\n//go:generate go run -mod=mod entgo.io/ent/cmd/ent generate ./schema\n"
+	genFileTpl = "package ent\n\n//go:generate go run -mod=mod entgo.io/ent/cmd/ent generate %s ./schema\n"
 )
 
 // examples formats the given examples to the cli.

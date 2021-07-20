@@ -37,6 +37,8 @@ type (
 		// Header is an optional header signature for generated files.
 		Header string
 		// Storage to support in codegen.
+		EntityPackagePrefix string
+		// Storage to support in codegen.
 		Storage *Storage
 
 		// IDType specifies the type of the id field in the codegen.

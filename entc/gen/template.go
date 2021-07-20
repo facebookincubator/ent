@@ -44,28 +44,28 @@ var (
 	Templates = []TypeTemplate{
 		{
 			Name:   "create",
-			Format: pkgf("%s_create.go"),
+			Format: typeFilename("%s_create.go"),
 		},
 		{
 			Name:   "update",
-			Format: pkgf("%s_update.go"),
+			Format: typeFilename("%s_update.go"),
 		},
 		{
 			Name:   "delete",
-			Format: pkgf("%s_delete.go"),
+			Format: typeFilename("%s_delete.go"),
 		},
 		{
 			Name:           "query",
-			Format:         pkgf("%s_query.go"),
+			Format:         typeFilename("%s_query.go"),
 			ExtendPatterns: []string{"dialect/*/query/fields/additional/*"},
 		},
 		{
 			Name:   "model",
-			Format: pkgf("%s.go"),
+			Format: typeFilename("%s.go"),
 		},
 		{
 			Name:   "where",
-			Format: pkgf("%s/where.go"),
+			Format: pkgFilename("%s/where.go"),
 			ExtendPatterns: []string{
 				"where/additional/*",
 			},
@@ -73,7 +73,7 @@ var (
 		{
 			Name: "meta",
 			Format: func(t *Type) string {
-				return fmt.Sprintf("%s/%s.go", t.Package(), t.Package())
+				return fmt.Sprintf("%s/%s.go", t.Package(), t.Filename())
 			},
 			ExtendPatterns: []string{
 				"meta/additional/*",
@@ -292,7 +292,11 @@ func MustParse(t *Template, err error) *Template {
 	return t
 }
 
-func pkgf(s string) func(t *Type) string {
+func typeFilename(s string) func(t *Type) string {
+	return func(t *Type) string { return fmt.Sprintf(s, t.Filename()) }
+}
+
+func pkgFilename(s string) func(t *Type) string {
 	return func(t *Type) string { return fmt.Sprintf(s, t.Package()) }
 }
 
